@@ -1,4 +1,4 @@
-FROM ghcr.io/cyber-dojo-languages/go:b7e7991
+FROM ghcr.io/cyber-dojo-languages/go:097d996
 LABEL maintainer=jon@jaggersoft.com
 
 COPY ./install.sh .
