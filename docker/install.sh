@@ -3,6 +3,13 @@
 # gomock's mocks are written by mockgen, which a kata runs on every [test]
 # press. Installing it as a binary here means a press execs it rather than
 # compiling it, which is the difference between milliseconds and seconds.
+#
+# go.uber.org/mock is pinned here and in the go.mod below, not left to resolve
+# to @latest, because the start-point's go.mod names an exact version and a
+# kata runs with no network. The image is rebuilt every week under the same
+# tag, so an unpinned version drifts away from the start-point and every light
+# comes out amber. Do not unpin either. Raising the version means raising
+# both, and the start-point's go.mod to match.
 go install go.uber.org/mock/mockgen@v0.6.0
 
 # A [test] press compiles the kata's packages, the gomock library, and the test
