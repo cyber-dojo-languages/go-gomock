@@ -1,16 +1,37 @@
 #!/bin/bash -Eeu
 
+# Appends one test framework to the test_frameworks list the base image
+# wrote in /versions.json, keeping any entry an earlier image added. Stops
+# the build if the list is not found, rather than record nothing. Short grep
+# flags because busybox grep has no long ones.
+add_test_framework()
+{
+  local -r name="${1}"
+  local -r version="${2}"
+  local -r entry="{\"name\": \"${name}\", \"version\": \"${version}\"}"
+  if grep -q '"test_frameworks": \[\]' /versions.json; then
+    sed -i "s|\"test_frameworks\": \[\]|\"test_frameworks\": [${entry}]|" /versions.json
+  else
+    sed -i "/\"test_frameworks\": \[/s|}\]|}, ${entry}]|" /versions.json
+  fi
+  if ! grep -q -F "${entry}" /versions.json; then
+    echo "Could not add ${name} to /versions.json" >&2
+    cat /versions.json >&2
+    exit 1
+  fi
+}
+
 # gomock's mocks are written by mockgen, which a kata runs on every [test]
 # press. Installing it as a binary here means a press execs it rather than
 # compiling it, which is the difference between milliseconds and seconds.
 #
-# go.uber.org/mock is pinned here and in the go.mod below, not left to resolve
-# to @latest, because the start-point's go.mod names an exact version and a
-# kata runs with no network. The image is rebuilt every week under the same
-# tag, so an unpinned version drifts away from the start-point and every light
-# comes out amber. Do not unpin either. Raising the version means raising
-# both, and the start-point's go.mod to match.
-go install go.uber.org/mock/mockgen@v0.6.0
+# The newest go.uber.org/mock release, resolved once here at build time and
+# used for both mockgen and the go.mod below, so the image holds one version.
+# A kata runs with no network, so the start-point's go.mod and go.sum must
+# name this same version; they are printed at the end of this build for the
+# start-point's copies to be updated to match.
+readonly GOMOCK_VERSION=$(go list -m -f '{{.Version}}' go.uber.org/mock@latest)
+go install "go.uber.org/mock/mockgen@${GOMOCK_VERSION}"
 
 # A [test] press compiles the kata's packages, the gomock library, and the test
 # variant of each, then links a test binary. None of that survives a press,
@@ -27,12 +48,12 @@ go install go.uber.org/mock/mockgen@v0.6.0
 mkdir /go/build-cache
 mkdir warmup && cd warmup
 
-cat > go.mod << 'EOF'
+cat > go.mod << EOF
 module cyber-dojo-go-gomock
 
 go 1.26.1
 
-require go.uber.org/mock v0.6.0
+require go.uber.org/mock ${GOMOCK_VERSION}
 EOF
 
 cat > hiker.go << 'EOF'
@@ -113,6 +134,18 @@ if [ "$(echo "${COLD_SECONDS} > ${WARM_SECONDS} * 3" | bc -l)" != '1' ]; then
   >&2 echo "The cache is not being hit, so a kata's first press will rebuild."
   exit 42
 fi
+
+add_test_framework gomock "${GOMOCK_VERSION#v}"
+cat /versions.json
+
+# The start-point's go.mod and go.sum must require exactly what this image
+# holds. These are printed between markers so they can be copied from the
+# build log into the start-point whenever a rebuild picks up a new release.
+echo '--- start-point go.mod requires ---'
+sed -n '/^require/,$p' go.mod
+echo '--- start-point go.sum ---'
+cat go.sum
+echo '--- end ---'
 
 cd ..
 rm -rf warmup
